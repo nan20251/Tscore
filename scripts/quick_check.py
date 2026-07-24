@@ -36,7 +36,7 @@ for pkg in ['torch_geometric', 'torch_scatter', 'torch_sparse', 'torch_cluster',
     check_import(pkg)
 
 print('\nOther packages:')
-for pkg in ['freesasa', 'biopython']:
+for pkg in ['freesasa', 'Bio', 'plyfile', 'open3d']:
     check_import(pkg)
 
 sys.exit(0 if all_ok else 1)
