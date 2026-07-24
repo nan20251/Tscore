@@ -1,0 +1,26 @@
+name: tscore
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - pip
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - tqdm
+  - biopython
+  - freesasa
+  - pytorch::pytorch=2.4.1
+  - pytorch::pytorch-cuda=12.1
+
+# After creating this env:
+#   conda activate tscore
+#   pip install -e .
+#   pip install torch-scatter torch-sparse torch-cluster torch-spline-conv \
+#     -f https://data.pyg.org/whl/torch-2.4.1+cu121.html
+#   pip install torch-geometric

@@ -1,0 +1,16 @@
+# Core scientific stack (install PyTorch / PyG for your CUDA build separately)
+numpy
+scipy
+pandas
+scikit-learn
+tqdm
+biopython
+plyfile
+open3d
+requests
+freesasa
+
+# Deep learning — pin versions to your platform; see environment.yml
+torch>=1.12.0
+torch-geometric>=2.0.0
+# torch-scatter  # install from PyG wheels matching torch+cuda
