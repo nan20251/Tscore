@@ -43,25 +43,34 @@ from example.prep_dockground_decoys import split_chains, calc_dockq, classify
 DOCKQ_BIN = os.environ.get('DOCKQ_BIN', 'DockQ')
 
 
+def _dockq_cmd_prefix():
+    """DockQ.py needs interpreter; installed `DockQ` binary does not."""
+    bin_path = DOCKQ_BIN
+    if str(bin_path).endswith('.py'):
+        return [sys.executable, bin_path]
+    return [bin_path]
+
+
 def run_dockq(decoy_pdb, native_pdb,
               native_chains=None, model_chains=None):
     """调 DockQ 官方脚本，解析出 (fnat, irms, lrms, dockq)。失败返回 None。
     native_chains / model_chains: 可选 list，如 ['A','B']，传给 DockQ 做链映射。
     兼容 DockQ v1（旧 CLI 'DockQ.py'）和 v2（新 CLI 'DockQ'，输出带冒号）。"""
-    cmd = [DOCKQ_BIN, decoy_pdb, native_pdb]
+    prefix = _dockq_cmd_prefix()
+    attempts = [prefix + [decoy_pdb, native_pdb]]
     if native_chains and model_chains:
-        # DockQ v2 用 --mapping model_chain:native_chain
-        # DockQ v1 用 -native_chain1 / -model_chain1
-        # 优先尝试 v2 语法（更明确）
         mapping = ''.join(model_chains) + ':' + ''.join(native_chains)
-        cmd += ['--mapping', mapping]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        out = r.stdout
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
+        attempts.append(prefix + [decoy_pdb, native_pdb, '--mapping', mapping])
+        if len(native_chains) >= 1 and len(model_chains) >= 1:
+            v1 = prefix + [decoy_pdb, native_pdb,
+                           '-native_chain1', native_chains[0],
+                           '-model_chain1', model_chains[0]]
+            if len(native_chains) >= 2 and len(model_chains) >= 2:
+                v1 += ['-native_chain2', native_chains[1],
+                       '-model_chain2', model_chains[1]]
+            attempts.append(v1)
 
-    def grab(*pats):
+    def grab(out, *pats):
         for pat in pats:
             m = re.search(pat, out, re.MULTILINE)
             if m:
@@ -71,19 +80,27 @@ def run_dockq(decoy_pdb, native_pdb,
                     continue
         return None
 
-    # v2 格式: "DockQ: 0.014" / "iRMSD: 22.561" / "LRMSD: 43.302" / "fnat: 0.000"
-    # v1 格式: "DockQ 0.014" / "iRMS 22.561" / "Lrms 43.302" / "Fnat 0.000"
-    # 用 [:\s]+ 同时匹配冒号和空格
-    fnat  = grab(r'(?<!non)[Ff]nat[:\s]+([\d.]+)')
-    irms  = grab(r'\bi[Rr][Mm][Ss][Dd]?[:\s]+([\d.]+)')
-    lrms  = grab(r'\b[Ll][Rr][Mm][Ss][Dd]?[:\s]+([\d.]+)')
-    dockq = grab(r'DockQ(?:\s+Score)?[:\s]+([\d.]+)')
-    if None in (fnat, irms, lrms):
-        return None
-    if dockq is None:
-        dockq = calc_dockq(fnat, irms, lrms)
-    return fnat, irms, lrms, dockq
+    last_out = ''
+    for cmd in attempts:
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+        out = (r.stdout or '') + '\n' + (r.stderr or '')
+        last_out = out
+        # v2: "DockQ: 0.014" / v1: "DockQ 0.014"
+        fnat = grab(out, r'(?<!non)[Ff]nat[:\s]+([\d.]+)')
+        irms = grab(out, r'\bi[Rr][Mm][Ss][Dd]?[:\s]+([\d.]+)')
+        lrms = grab(out, r'\b[Ll][Rr][Mm][Ss][Dd]?[:\s]+([\d.]+)')
+        dockq = grab(out, r'DockQ(?:\s+Score)?[:\s]+([\d.]+)')
+        if None in (fnat, irms, lrms):
+            continue
+        if dockq is None:
+            dockq = calc_dockq(fnat, irms, lrms)
+        return fnat, irms, lrms, dockq
 
+    run_dockq.last_output = last_out[-500:] if last_out else ''
+    return None
 
 def read_chain_list_file(path):
     """读链映射文件。接受 'A B' / 'A\\nB' / 'AB'（单 token 多字符自动拆）。返回 list 保留顺序。"""
@@ -152,7 +169,9 @@ def process_decoy(job):
         labels = run_dockq(decoy_pdb, native_pdb,
                            native_chains_map, model_chains_map)
         if labels is None:
-            return {'ok': False, 'name': name, 'msg': 'DockQ 失败(cached ply)'}
+            detail = getattr(run_dockq, 'last_output', '') or ''
+            return {'ok': False, 'name': name,
+                    'msg': f'DockQ 失败(cached ply) {detail[:200]}'}
         fnat, irms, lrms, dockq = labels
         return {'ok': True, 'name': name, 'stem': stem, 'decoy_id': gid,
                 'dockq': dockq, 'fnat': fnat, 'irms': irms, 'lrms': lrms,
@@ -161,7 +180,8 @@ def process_decoy(job):
     labels = run_dockq(decoy_pdb, native_pdb,
                        native_chains_map, model_chains_map)
     if labels is None:
-        return {'ok': False, 'name': name, 'msg': 'DockQ 失败'}
+        detail = getattr(run_dockq, 'last_output', '') or ''
+        return {'ok': False, 'name': name, 'msg': f'DockQ 失败 {detail[:200]}'}
     fnat, irms, lrms, dockq = labels
 
     try:
