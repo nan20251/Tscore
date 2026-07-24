@@ -18,9 +18,10 @@ dependencies:
   - pytorch::pytorch=2.4.1
   - pytorch::pytorch-cuda=12.1
 
-# After creating this env:
+# Create or update:
+#   conda env create -f environment.yml || conda env update -n tscore -f environment.yml --prune
 #   conda activate tscore
-#   pip install -e .
 #   pip install torch-scatter torch-sparse torch-cluster torch-spline-conv \
 #     -f https://data.pyg.org/whl/torch-2.4.1+cu121.html
-#   pip install torch-geometric
+#   pip install torch-geometric pytest
+#   pip install -e .
